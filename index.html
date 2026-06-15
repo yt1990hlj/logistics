@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>中东港口与新能源项目分布图 | 项目统一红色标注</title>
+    <!-- Leaflet 核心库 -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+            background: #e9f2f5;
+            padding: 20px;
+        }
+        .map-container {
+            position: relative;
+            max-width: 1400px;
+            margin: 0 auto;
+            border-radius: 24px;
+            box-shadow: 0 12px 28px rgba(0,0,0,0.2);
+            overflow: hidden;
+            border: 1px solid #cbd5e1;
+        }
+        #map {
+            height: 720px;
+            width: 100%;
+            background: #c8e0f0;
+        }
+        /* 图例面板 - 支持滚动，细分项目独立显示 */
+        .legend-panel {
+            background: rgba(255, 255, 255, 0.96);
+            backdrop-filter: blur(2px);
+            border-radius: 16px;
+            padding: 12px 16px;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+            border: 1px solid #ddd;
+            font-size: 12px;
+            line-height: 1.4;
+            min-width: 250px;
+            pointer-events: auto;
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+        .legend-panel h4 {
+            margin: 0 0 8px 0;
+            font-size: 16px;
+            text-align: center;
+            color: #1e2a3e;
+            border-bottom: 2px solid #3b82f6;
+            display: inline-block;
+            width: 100%;
+            padding-bottom: 4px;
+        }
+        .legend-section {
+            margin-top: 8px;
+            font-weight: 600;
+            font-size: 12px;
+            color: #2c3e66;
+            border-left: 3px solid #3b82f6;
+            padding-left: 8px;
+            margin-bottom: 6px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 6px;
+            font-size: 11px;
+            color: #1e293b;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px solid #2d3e50;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            flex-shrink: 0;
+        }
+        .legend-color-square {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            border: 1px solid #2d3e50;
+            flex-shrink: 0;
+        }
+        .legend-text {
+            flex: 1;
+        }
+        .legend-note {
+            margin-top: 10px;
+            font-size: 10px;
+            color: #4b5563;
+            text-align: center;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 6px;
+        }
+        .custom-tooltip-port {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+        .leaflet-popup-content-wrapper {
+            border-radius: 16px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+        }
+        .port-marker, .project-marker {
+            transition: all 0.2s ease;
+        }
+        .sea-label, .city-marker-light {
+            pointer-events: none;
+        }
+        @media (max-width: 640px) {
+            .legend-panel { min-width: 200px; padding: 8px 10px; font-size: 10px; max-height: 60vh; }
+            .legend-item { font-size: 9px; gap: 6px; }
+            .legend-color, .legend-color-square { width: 16px; height: 16px; }
+            #map { height: 560px; }
+        }
+    </style>
+</head>
+<body>
+<div style="text-align: center; margin-bottom: 12px;">
+    <h1>🌊 中东核心港口 & 新能源项目分布图</h1>
+    <p>基于真实坐标标注 | 港口颜色分类 · 新能源项目统一红色标注 | 点击标记获取详情</p>
+</div>
+<div class="map-container">
+    <div id="map"></div>
+</div>
+<footer style="text-align: center; margin-top: 16px; font-size: 12px; color: #4b6a7c;">
+    📍 港口与项目均依据真实经纬度 | 支持缩放/拖动 | 图例中项目方块统一为红色
+</footer>
+
+<script>
+    (function() {
+        // ---------- 1. 初始化地图 ----------
+        const map = L.map('map').setView([24.5, 52.5], 6);
+        
+        // 底图 (CartoDB 浅色)
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; CartoDB',
+            subdomains: 'abcd',
+            maxZoom: 18,
+            minZoom: 4
+        }).addTo(map);
+        
+        L.control.scale({ metric: true, imperial: false, position: 'bottomleft' }).addTo(map);
+        
+        // ---------- 2. 港口数据 (8个) ----------
+        const ports = [
+            { nameCn: "杰贝阿里港", nameEn: "Jebel Ali Port", lat: 25.0105, lng: 55.0608, colorHex: "#E31B23", description: "中东最大中转港，世界级集装箱枢纽", markerColor: "红色" },
+            { nameCn: "哈利法港", nameEn: "Khalifa Port", lat: 24.945, lng: 54.642, colorHex: "#1E88E5", description: "阿布扎比旗舰港口，自动化先进门户", markerColor: "蓝色" },
+            { nameCn: "达曼港", nameEn: "Dammam Port", lat: 26.463, lng: 50.108, colorHex: "#2E7D32", description: "沙特主要石油化工出口港，波斯湾重要枢纽", markerColor: "绿色" },
+            { nameCn: "吉达港", nameEn: "Jeddah Islamic Port", lat: 21.482, lng: 39.182, colorHex: "#F39C12", description: "红海沿岸关键门户，连接三大洲贸易", markerColor: "橙色" },
+            { nameCn: "苏哈尔港", nameEn: "Sohar Port", lat: 24.517, lng: 56.633, colorHex: "#9B59B6", description: "阿曼湾重要中转枢纽，工业与物流中心", markerColor: "紫色" },
+            { nameCn: "豪尔费坎港", nameEn: "Khor Al Fakkan Port", lat: 25.340, lng: 56.360, colorHex: "#F4D03F", description: "印度洋沿岸货运枢纽，阿联酋东海岸深水港", markerColor: "黄色" },
+            { nameCn: "杜古姆港", nameEn: "Duqm Port", lat: 20.665, lng: 58.200, colorHex: "#A0522D", description: "新兴工业港，阿曼经济多元化旗舰", markerColor: "棕色" },
+            { nameCn: "富查伊拉港", nameEn: "Fujairah Port", lat: 25.139, lng: 56.349, colorHex: "#2C3E50", description: "阿联酋东海岸重要油港，全球第二大加油港", markerColor: "黑色" }
+        ];
+        
+        // ---------- 3. 新能源项目数据 (所有项目统一使用红色 #E31B23) ----------
+        const PROJECT_RED = "#E31B23";   // 统一红色
+        const projects = [
+            { name: "RTC光储项目", type: "光储", lat: 24.1240694, lng: 54.6396472, colorHex: PROJECT_RED, description: "阿联酋大型光储一体化项目，提升可再生能源稳定性" },
+            { name: "PV3光伏项目", type: "光伏", lat: 24.6065, lng: 55.0591944, colorHex: PROJECT_RED, description: "阿联酋光伏电站，清洁能源计划重要组成", note: "坐标24°36'23.4\"N 55°03'33.1\"E" },
+            { name: "AFIF1光伏项目", type: "光伏", lat: 23.7842583, lng: 43.1699278, colorHex: PROJECT_RED, description: "沙特AFIF地区大型光伏电站1期", note: "坐标23°47'3.33\"N 43°10'11.74\"E" },
+            { name: "AFIF2光伏项目", type: "光伏", lat: 23.7842583, lng: 43.1699278, colorHex: PROJECT_RED, description: "沙特AFIF地区大型光伏电站2期 (与AFIF1同址)", note: "坐标23°47'3.33\"N 43°10'11.74\"E" },
+            { name: "PDO R1风电项目", type: "风电", lat: 18.3781389, lng: 55.8935833, colorHex: PROJECT_RED, description: "阿曼PDO区域风电试点项目1", note: "坐标18°22'41.3\"N 55°53'36.9\"E" },
+            { name: "PDO R2风电项目", type: "风电", lat: 18.47325, lng: 56.0475, colorHex: PROJECT_RED, description: "阿曼PDO区域风电项目2", note: "坐标18°28'23.7\"N 56°02'51.0\"E" },
+            { name: "PDO光伏项目", type: "光伏", lat: 21.4922456, lng: 57.020495, colorHex: PROJECT_RED, description: "阿曼PDO光伏电站，助力石油产区能源转型", note: "坐标21°29'32.084\"N 57°1'13.782\"E" }
+        ];
+        
+        // 辅助函数：添加圆形标记
+        function addMarker(item, isPort = true) {
+            const radius = isPort ? 11 : 8;
+            const fillColor = item.colorHex;
+            const marker = L.circleMarker([item.lat, item.lng], {
+                radius: radius,
+                fillColor: fillColor,
+                color: "#1F2A3E",
+                weight: 1.8,
+                opacity: 0.9,
+                fillOpacity: 0.85,
+                className: isPort ? "port-marker" : "project-marker"
+            }).addTo(map);
+            
+            // 永久tooltip (显示完整名称)
+            const tooltipText = isPort ? 
+                `<div style="font-weight: bold; background: rgba(0,0,0,0.7); color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; white-space: nowrap; backdrop-filter: blur(4px); border-left: 4px solid ${fillColor};">⚓ ${item.nameEn}<br>📍 ${item.nameCn}</div>` :
+                `<div style="font-weight: bold; background: rgba(0,0,0,0.7); color: white; padding: 4px 10px; border-radius: 20px; font-size: 11px; white-space: nowrap; backdrop-filter: blur(4px); border-left: 4px solid ${fillColor};">🔋 ${item.name}</div>`;
+            
+            marker.bindTooltip(tooltipText, { permanent: true, direction: 'top', offset: [0, -10], className: 'custom-tooltip-port' });
+            
+            // 弹窗详情 (包含完整名称与说明)
+            let popupHtml = "";
+            if (isPort) {
+                popupHtml = `
+                    <div style="min-width: 200px;">
+                        <h3 style="margin:0 0 5px; color:${fillColor};">${item.nameEn}</h3>
+                        <p style="font-weight:bold;">${item.nameCn}</p>
+                        <p style="font-size:12px;">${item.description}</p>
+                        <hr><span style="font-size:11px;">🎨 标记: ${item.markerColor}</span><br>
+                        <span style="font-size:10px;">📍 ${item.lat.toFixed(4)}, ${item.lng.toFixed(4)}</span>
+                    </div>`;
+            } else {
+                popupHtml = `
+                    <div style="min-width: 220px;">
+                        <h3 style="margin:0 0 5px; color:${fillColor};">${item.name}</h3>
+                        <p style="font-size:12px; margin:4px 0;"><strong>类型:</strong> ${item.type}</p>
+                        <p style="font-size:12px;">${item.description}</p>
+                        ${item.note ? `<p style="font-size:10px; color:#555;">📌 ${item.note}</p>` : ''}
+                        <span style="font-size:10px;">📍 ${item.lat.toFixed(5)}, ${item.lng.toFixed(5)}</span>
+                    </div>`;
+            }
+            marker.bindPopup(popupHtml, { maxWidth: 280 });
+            
+            // hover效果
+            marker.on('mouseover', function(e) {
+                this.setRadius(isPort ? 14 : 10);
+                this.setStyle({ weight: 2.5, fillOpacity: 1 });
+            });
+            marker.on('mouseout', function(e) {
+                this.setRadius(isPort ? 11 : 8);
+                this.setStyle({ weight: 1.8, fillOpacity: 0.85 });
+            });
+            return marker;
+        }
+        
+        // 添加所有港口标记
+        ports.forEach(port => addMarker(port, true));
+        // 添加所有项目标记 (统一红色)
+        projects.forEach(proj => addMarker(proj, false));
+        
+        // ---------- 4. 图例控件 (港口独立 + 项目统一红色方块，每个项目完整名称) ----------
+        const legendControl = L.control({ position: 'topright' });
+        legendControl.onAdd = function() {
+            const div = L.DomUtil.create('div', 'legend-panel');
+            // 构建港口HTML
+            let portsHtml = `
+                <h4>📌 图例说明</h4>
+                <div class="legend-section">⚓ 港口 (8个)</div>
+                <div class="legend-item"><div class="legend-color" style="background:#E31B23;"></div><div class="legend-text"><strong>杰贝阿里港</strong> (中东最大中转港)</div></div>
+                <div class="legend-item"><div class="legend-color" style="background:#1E88E5;"></div><div class="legend-text"><strong>哈利法港</strong> (阿布扎比旗舰港)</div></div>
+                <div class="legend-item"><div class="legend-color" style="background:#2E7D32;"></div><div class="legend-text"><strong>达曼港</strong> (石化出口港)</div></div>
+                <div class="legend-item"><div class="legend-color" style="background:#F39C12;"></div><div class="legend-text"><strong>吉达港</strong> (红海门户)</div></div>
+                <div class="legend-item"><div class="legend-color" style="background:#9B59B6;"></div><div class="legend-text"><strong>苏哈尔港</strong> (阿曼湾枢纽)</div></div>
+                <div class="legend-item"><div class="legend-color" style="background:#F4D03F;"></div><div class="legend-text"><strong>豪尔费坎港</strong> (印度洋枢纽)</div></div>
+                <div class="legend-item"><div class="legend-color" style="background:#A0522D;"></div><div class="legend-text"><strong>杜古姆港</strong> (新兴工业港)</div></div>
+                <div class="legend-item"><div class="legend-color" style="background:#2C3E50;"></div><div class="legend-text"><strong>富查伊拉港</strong> (全球主要加油港)</div></div>
+            `;
+            
+            // 构建项目HTML - 每个项目独立显示完整名称，方块统一红色
+            let projectsHtml = `<div class="legend-section" style="margin-top:12px;">🔋 新能源项目 (7个，统一红色标注)</div>`;
+            projects.forEach(proj => {
+                projectsHtml += `
+                    <div class="legend-item">
+                        <div class="legend-color-square" style="background:#E31B23; border-color:#2d3e50;"></div>
+                        <div class="legend-text"><strong>${proj.name}</strong> (${proj.type})</div>
+                    </div>
+                `;
+            });
+            
+            // 组合完整图例
+            div.innerHTML = portsHtml + projectsHtml + `
+                <div class="legend-note">
+                    🌍 基于真实经纬度 | 点击标记查看详情<br>
+                    📍 AFIF1与AFIF2同址，弹窗中可区分
+                </div>
+            `;
+            L.DomEvent.disableClickPropagation(div);
+            return div;
+        };
+        legendControl.addTo(map);
+        
+        // ---------- 5. 辅助装饰：海域标签、城市参考、经纬网格 ----------
+        const seaLabels = [
+            { name: "波斯湾", lat: 27.2, lng: 52.0 },
+            { name: "阿曼湾", lat: 24.8, lng: 58.8 },
+            { name: "红海", lat: 22.5, lng: 37.5 },
+            { name: "阿拉伯海", lat: 18.5, lng: 62.0 },
+            { name: "霍尔木兹海峡", lat: 26.6, lng: 55.8 }
+        ];
+        seaLabels.forEach(sea => {
+            const icon = L.divIcon({
+                className: 'sea-label',
+                html: `<div style="font-size:12px; font-weight:500; color:#2c6e9e; background:rgba(255,255,240,0.6); padding:2px 8px; border-radius:30px; backdrop-filter:blur(2px); border-left:3px solid #3b82f6; white-space:nowrap;">🌊 ${sea.name}</div>`,
+                iconSize: [80, 22],
+                iconAnchor: [40, 12]
+            });
+            L.marker([sea.lat, sea.lng], { icon: icon, interactive: false }).addTo(map);
+        });
+        
+        const cities = [
+            { name: "迪拜", lat: 25.2048, lng: 55.2708 },
+            { name: "阿布扎比", lat: 24.4539, lng: 54.3773 },
+            { name: "马斯喀特", lat: 23.5880, lng: 58.3829 },
+            { name: "多哈", lat: 25.2854, lng: 51.5310 },
+            { name: "利雅得", lat: 24.7136, lng: 46.6753 }
+        ];
+        cities.forEach(city => {
+            const icon = L.divIcon({
+                className: 'city-marker-light',
+                html: `<div style="font-size:11px; background:rgba(255,255,224,0.8); padding:1px 6px; border-radius:12px; border:0.5px solid #cbd5e1; white-space:nowrap;">🏙️ ${city.name}</div>`,
+                iconSize: [50, 18],
+                iconAnchor: [25, 9]
+            });
+            L.marker([city.lat, city.lng], { icon: icon, interactive: false, zIndexOffset: -10 }).addTo(map);
+        });
+        
+        // 经纬网格
+        const longitudes = [42, 46, 50, 54, 58, 62];
+        const latitudes = [18, 22, 26, 30];
+        const dashLineStyle = { color: '#94a3b8', weight: 0.8, opacity: 0.45, dashArray: '6, 6' };
+        longitudes.forEach(lng => {
+            const points = [];
+            for (let lat = 12; lat <= 34; lat += 0.5) points.push([lat, lng]);
+            L.polyline(points, dashLineStyle).addTo(map);
+        });
+        latitudes.forEach(lat => {
+            const points = [];
+            for (let lng = 35; lng <= 68; lng += 0.5) points.push([lat, lng]);
+            L.polyline(points, dashLineStyle).addTo(map);
+        });
+        
+        // 豪尔费坎港外围光晕圈
+        const khorPort = ports.find(p => p.nameEn === "Khor Al Fakkan Port");
+        if (khorPort) {
+            L.circle([khorPort.lat, khorPort.lng], { radius: 18000, color: "#F4D03F", weight: 1.2, fillColor: "#FFF9C4", fillOpacity: 0.12, interactive: false }).addTo(map);
+        }
+        // 杜古姆港发展圈
+        const duqmPort = ports.find(p => p.nameEn === "Duqm Port");
+        if (duqmPort) {
+            L.circle([duqmPort.lat, duqmPort.lng], { radius: 25000, color: "#A0522D", weight: 1, fillColor: "#CDA776", fillOpacity: 0.08, dashArray: "5, 6", interactive: false }).addTo(map);
+        }
+        
+        // 罗盘标识
+        const compassControl = L.control({ position: 'bottomright' });
+        compassControl.onAdd = function() {
+            const div = L.DomUtil.create('div', 'compass-indicator');
+            div.innerHTML = `<div style="background: rgba(0,0,0,0.6); color: white; border-radius: 30px; padding: 4px 10px; font-size: 13px; backdrop-filter: blur(4px);">🧭 N</div>`;
+            L.DomEvent.disableClickPropagation(div);
+            return div;
+        };
+        compassControl.addTo(map);
+        
+        // 自动调整视野包含所有标记
+        const allPoints = [...ports.map(p => [p.lat, p.lng]), ...projects.map(p => [p.lat, p.lng])];
+        const bounds = L.latLngBounds(allPoints);
+        bounds.extend([21.0, 36.5]);
+        bounds.extend([28.0, 60.5]);
+        setTimeout(() => {
+            if (!map.getBounds().contains(bounds)) {
+                map.fitBounds(bounds.pad(0.2));
+            }
+        }, 300);
+        
+        console.log("地图加载完成 | 港口:8个 | 新能源项目:7个(图例及地图标记已统一红色)");
+    })();
+</script>
+</body>
+</html>
